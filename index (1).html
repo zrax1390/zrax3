@@ -1,0 +1,243 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zrax - ویدیوها</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Vazir', sans-serif; background-size: cover; background-position: center; transition: background-image 0.5s; }
+    iframe { width: 100%; height: 100%; min-height: 400px; }
+    #banner { width: 100%; height: 200px; object-fit: cover; }
+    #logo { max-width: 150px; max-height: 150px; }
+  </style>
+</head>
+<body class="bg-gray-100" id="body">
+  <!-- هدر -->
+  <header class="bg-blue-600 text-white p-4 relative">
+    <div class="container mx-auto flex justify-between items-center">
+      <img id="logo" src="https://via.placeholder.com/150?text=لوگو" alt="لوگو Zrax" class="mr-4">
+      <h1 class="text-2xl font-bold">Zrax - ویدیوها</h1>
+      <a href="#admin" class="bg-yellow-400 text-black px-4 py-2 rounded hover:bg-yellow-500">ورود به پنل ادمین</a>
+    </div>
+    <img id="banner" src="https://via.placeholder.com/1200x200?text=بنر" alt="بنر Zrax" class="w-full mt-2">
+  </header>
+
+  <!-- لیست ویدیوها -->
+  <section class="container mx-auto py-4">
+    <h2 class="text-xl font-bold mb-4">لیست ویدیوها</h2>
+    <ul id="video-nav" class="bg-white p-4 rounded-lg shadow-lg flex flex-wrap gap-4"></ul>
+  </section>
+
+  <!-- بخش اصلی نمایش ویدیوها -->
+  <main class="container mx-auto py-8">
+    <div id="video-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+  </main>
+
+  <!-- پنل ادمین -->
+  <section id="admin" class="container mx-auto py-8 hidden">
+    <div class="bg-white p-6 rounded-lg shadow-lg">
+      <h2 class="text-2xl font-bold mb-4">پنل ادمین</h2>
+      <div id="admin-login" class="mb-4">
+        <input type="password" id="admin-password" class="border p-2 rounded w-full mb-2" placeholder="رمز ادمین را وارد کنید">
+        <button onclick="loginAdmin()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">ورود</button>
+      </div>
+      <div id="admin-panel" class="hidden">
+        <form id="video-form" class="mb-4">
+          <input type="text" id="video-title" class="border p-2 rounded w-full mb-2" placeholder="عنوان ویدیو">
+          <input type="text" id="video-url" class="border p-2 rounded w-full mb-2" placeholder="لینک ویدیو (یوتیوب یا آپارات)">
+          <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">افزودن ویدیو</button>
+        </form>
+        <!-- فرم تنظیمات ظاهر -->
+        <form id="design-form" class="mb-4">
+          <input type="text" id="background-url" class="border p-2 rounded w-full mb-2" placeholder="لینک پس‌زمینه">
+          <input type="text" id="banner-url" class="border p-2 rounded w-full mb-2" placeholder="لینک بنر">
+          <input type="text" id="logo-url" class="border p-2 rounded w-full mb-2" placeholder="لینک لوگو">
+          <button type="submit" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">به‌روزرسانی ظاهر</button>
+        </form>
+        <div id="admin-video-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // داده‌های اولیه ویدیوها و تنظیمات ظاهر
+    let videos = JSON.parse(localStorage.getItem('videos')) || [
+      { id: 1, title: "آموزش جاوااسکریپت", url: "https://www.youtube.com/embed/dQw4w9WgXcQ" },
+      { id: 2, title: "آموزش پایتون", url: "https://www.aparat.com/video/video/embed/videohash/XYZ123/vt/frame" }
+    ];
+    let settings = JSON.parse(localStorage.getItem('settings')) || {
+      background: "https://via.placeholder.com/1500x1000?text=پس‌زمینه",
+      banner: "https://via.placeholder.com/1200x200?text=بنر",
+      logo: "https://via.placeholder.com/150?text=لوگو"
+    };
+
+    // اعمال تنظیمات اولیه ظاهر
+    document.getElementById('body').style.backgroundImage = `url(${settings.background})`;
+    document.getElementById('banner').src = settings.banner;
+    document.getElementById('logo').src = settings.logo;
+
+    // نمایش لیست ناوبری ویدیوها
+    function displayVideoNav() {
+      const videoNav = document.getElementById('video-nav');
+      videoNav.innerHTML = '';
+      videos.forEach(video => {
+        const navItem = `
+          <li>
+            <a href="#video-${video.id}" class="text-blue-600 hover:underline">${video.title}</a>
+          </li>
+        `;
+        videoNav.innerHTML += navItem;
+      });
+    }
+
+    // نمایش ویدیوها در صفحه اصلی
+    function displayVideos() {
+      const videoList = document.getElementById('video-list');
+      videoList.innerHTML = '';
+      videos.forEach(video => {
+        const videoCard = `
+          <div id="video-${video.id}" class="bg-white p-4 rounded-lg shadow-lg">
+            <h3 class="text-lg font-bold mb-2">${video.title}</h3>
+            <iframe src="${video.url}" frameborder="0" allowfullscreen></iframe>
+          </div>
+        `;
+        videoList.innerHTML += videoCard;
+      });
+    }
+
+    // نمایش ویدیوها در پنل ادمین
+    function displayAdminVideos() {
+      const adminVideoList = document.getElementById('admin-video-list');
+      adminVideoList.innerHTML = '';
+      videos.forEach(video => {
+        const videoItem = `
+          <div class="flex justify-between items-center bg-gray-100 p-2 mb-2 rounded">
+            <span>${video.title}</span>
+            <div>
+              <button onclick="editVideo(${video.id})" class="bg-yellow-400 text-black px-2 py-1 rounded mr-2">ویرایش</button>
+              <button onclick="deleteVideo(${video.id})" class="bg-red-600 text-white px-2 py-1 rounded">حذف</button>
+            </div>
+          </div>
+        `;
+        adminVideoList.innerHTML += videoItem;
+      });
+    }
+
+    // ورود به پنل ادمین
+    function loginAdmin() {
+      const password = document.getElementById('admin-password').value;
+      if (password === 'admin123') {
+        document.getElementById('admin-login').classList.add('hidden');
+        document.getElementById('admin-panel').classList.remove('hidden');
+        displayAdminVideos();
+      } else {
+        alert('رمز اشتباه است!');
+      }
+    }
+
+    // مدیریت ویدیوها
+    document.getElementById('video-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const title = document.getElementById('video-title').value;
+      const url = document.getElementById('video-url').value;
+      const id = document.getElementById('video-form').dataset.editId;
+
+      if (id) {
+        const video = videos.find(v => v.id == id);
+        video.title = title;
+        video.url = url;
+        delete document.getElementById('video-form').dataset.editId;
+      } else {
+        const newVideo = { id: videos.length ? videos[videos.length - 1].id + 1 : 1, title, url };
+        videos.push(newVideo);
+      }
+
+      localStorage.setItem('videos', JSON.stringify(videos));
+      displayVideos();
+      displayAdminVideos();
+      displayVideoNav();
+      document.getElementById('video-form').reset();
+    });
+
+    // ویرایش ویدیو
+    function editVideo(id) {
+      const video = videos.find(v => v.id === id);
+      document.getElementById('video-title').value = video.title;
+      document.getElementById('video-url').value = video.url;
+      document.getElementById('video-form').dataset.editId = id;
+    }
+
+    // حذف ویدیو
+    function deleteVideo(id) {
+      videos = videos.filter(v => v.id !== id);
+      localStorage.setItem('videos', JSON.stringify(videos));
+      displayVideos();
+      displayAdminVideos();
+      displayVideoNav();
+    }
+
+    // به‌روزرسانی ظاهر
+    document.getElementById('design-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      settings.background = document.getElementById('background-url').value || settings.background;
+      settings.banner = document.getElementById('banner-url').value || settings.banner;
+      settings.logo = document.getElementById('logo-url').value || settings.logo;
+
+      document.getElementById('body').style.backgroundImage = `url(${settings.background})`;
+      document.getElementById('banner').src = settings.banner;
+      document.getElementById('logo').src = settings.logo;
+      localStorage.setItem('settings', JSON.stringify(settings));
+      document.getElementById('design-form').reset();
+    });
+
+    // نمایش اولیه
+    displayVideos();
+    displayVideoNav();
+
+    // نمایش پنل ادمین
+    document.querySelector('a[href="#admin"]').addEventListener('click', () => {
+      document.getElementById('admin').classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>
